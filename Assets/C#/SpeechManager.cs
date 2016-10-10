@@ -7,9 +7,12 @@ public class SpeechManager : MonoBehaviour
 {
     KeywordRecognizer keywordRecognizer = null;
     Dictionary<string, System.Action> keywords = new Dictionary<string, System.Action>();
+    GameObject placer = null;
 
     void Start()
     {
+        placer = GameObject.FindGameObjectWithTag("Placement");
+
         keywords.Add("Halt", () => this.BroadcastMessage("OnStop"));
 
         keywords.Add("Move", () => this.BroadcastMessage("OnStart"));
@@ -49,6 +52,8 @@ public class SpeechManager : MonoBehaviour
         keywords.Add("Begin Dancing", () => this.SendMessage("OnStartDancing"));
 
         keywords.Add("Stop Dancing", () => this.SendMessage("OnStopDancing"));
+
+        keywords.Add("Reset", () => placer.SendMessage("OnSelect"));
 
         // Tell the KeywordRecognizer about our keywords
 

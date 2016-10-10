@@ -10,7 +10,7 @@ public class Rotate : MonoBehaviour
     public float maxRot = 170f;         // Minimum angle of rotation (to contstrain movement)
     public float minRot = -170f;        // Maximim angle of rotation (if == min then unconstrained)
     public bool isFast = false;         // Flag to allow speed-up on selection
-    public bool isStopped = false;      // Flag to allow stopping
+    public bool isStopped = true;      // Flag to allow stopping
 
     // Internal variable to track overall rotation (if constrained)
 
