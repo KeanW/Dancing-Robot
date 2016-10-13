@@ -13,6 +13,7 @@ public class RobotMessages : Singleton<RobotMessages>
     public enum RobotMessageID : byte
     {
         RobotTransform = MessageID.UserMessageIDStart,
+        RobotScale,
         PartRotate,
         Max
     }
@@ -109,6 +110,25 @@ public class RobotMessages : Singleton<RobotMessages>
         }
     }
 
+    public void SendRobotScale(Vector3 factor)
+    {
+        // If we are connected to a session, broadcast our head info
+        if (this.serverConnection != null && this.serverConnection.IsConnected())
+        {
+            // Create an outgoing network message to contain all the info we want to send
+            NetworkOutMessage msg = CreateMessage((byte)RobotMessageID.RobotScale);
+
+            this.AppendVector3(msg, factor);
+
+            // Send the message as a broadcast, which will cause the server to forward it to all other users in the session.
+            this.serverConnection.Broadcast(
+                msg,
+                MessagePriority.Immediate,
+                MessageReliability.ReliableOrdered,
+                MessageChannel.Avatar);
+        }
+    }
+
     public void SendPartRotate(int number, float rot, float speed, bool fast, bool stopped)
     {
         // If we are connected to a session, broadcast our head info
@@ -147,11 +167,7 @@ public class RobotMessages : Singleton<RobotMessages>
     void OnMessageReceived(NetworkConnection connection, NetworkInMessage msg)
     {
         byte messageType = msg.ReadByte();
-        MessageCallback messageHandler = MessageHandlers[(RobotMessageID)messageType];
-        if (messageHandler != null)
-        {
-            messageHandler(msg);
-        }
+        MessageHandlers[(RobotMessageID)messageType]?.Invoke(msg);
     }
 
     #region HelperFunctionsForWriting

@@ -1,5 +1,5 @@
 ﻿using UnityEngine;
-using System.Collections;
+using HoloToolkit.Sharing;
 
 public class Scale : MonoBehaviour
 {
@@ -14,6 +14,10 @@ public class Scale : MonoBehaviour
         {
             SizeFactor = DefaultSizeFactor;
         }
+
+        RobotMessages.Instance.MessageHandlers[RobotMessages.RobotMessageID.RobotScale] = this.OnRobotScale;
+
+        //SharingSessionTracker.Instance.SessionJoined += this.OnSessionJoined;
     }
 
     public void OnBigger()
@@ -21,6 +25,7 @@ public class Scale : MonoBehaviour
         Vector3 scale = transform.localScale;
         scale *= SizeFactor;
         transform.localScale = scale;
+        RobotMessages.Instance.SendRobotScale(scale);
     }
 
     public void OnSmaller()
@@ -28,5 +33,21 @@ public class Scale : MonoBehaviour
         Vector3 scale = transform.localScale;
         scale /= SizeFactor;
         transform.localScale = scale;
+        RobotMessages.Instance.SendRobotScale(scale);
+    }
+
+    private void OnSessionJoined(object sender, SharingSessionTracker.SessionJoinedEventArgs e)
+    {
+        if (AnchorManager.Instance.Creator)
+            RobotMessages.Instance.SendRobotScale(transform.localScale);
+    }
+
+    void OnRobotScale(NetworkInMessage msg)
+    {
+        // We read the user ID but we don't use it here
+
+        msg.ReadInt64();
+
+        transform.localScale = RobotMessages.Instance.ReadVector3(msg);
     }
 }

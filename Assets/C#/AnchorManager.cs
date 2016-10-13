@@ -49,12 +49,10 @@ public class AnchorManager : Singleton<AnchorManager>
         }
     }
 
-    public string LastAnchor
+    private bool creator = false;
+    public bool Creator
     {
-        get
-        {
-            return lastName;
-        }
+        get { return creator; }
     }
 
     public bool AnchorEstablished
@@ -251,6 +249,7 @@ public class AnchorManager : Singleton<AnchorManager>
         {
             if (LocalUserHasLowestUserId())
             {
+                creator = true;
                 Debug.Log("Creating room ");
                 // To keep anchors alive even if all users have left the session ...
                 // Pass in true instead of false in CreateRoom.
@@ -272,7 +271,7 @@ public class AnchorManager : Singleton<AnchorManager>
         }
     }
 
-    bool LocalUserHasLowestUserId()
+    public bool LocalUserHasLowestUserId()
     {
         long localUserId = RobotMessages.Instance.localUserID;
         foreach (long userid in SharingSessionTracker.Instance.UserIds)

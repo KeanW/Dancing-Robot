@@ -1,7 +1,8 @@
 ﻿using UnityEngine;
+using HoloToolkit.Unity;
 using HoloToolkit.Sharing;
 
-public class TapToPlaceParent : MonoBehaviour
+public class TapToPlaceParent : Singleton<TapToPlaceParent>
 {
     AudioSource audioSource;
     bool placing = false;
@@ -100,14 +101,14 @@ public class TapToPlaceParent : MonoBehaviour
         RobotMessages.Instance.MessageHandlers[RobotMessages.RobotMessageID.RobotTransform] = this.OnRobotTransfrom;
 
         // And when a new user join we will send the anchor transform we have.
-        SharingSessionTracker.Instance.SessionJoined += Instance_SessionJoined;
+        SharingSessionTracker.Instance.SessionJoined += this.OnSessionJoined;
 
         audioSource = this.gameObject.GetComponent<AudioSource>();
     }
 
     // When a new user joins we want to send them the relative transform for the anchor if we have it.
 
-    private void Instance_SessionJoined(object sender, SharingSessionTracker.SessionJoinedEventArgs e)
+    private void OnSessionJoined(object sender, SharingSessionTracker.SessionJoinedEventArgs e)
     {
         if (GotTransform)
         {
@@ -117,7 +118,7 @@ public class TapToPlaceParent : MonoBehaviour
 
     // When a remote system has a transform for us, we'll get it here.
 
-    void OnRobotTransfrom(NetworkInMessage msg)
+    private void OnRobotTransfrom(NetworkInMessage msg)
     {
         // We read the user ID but we don't use it here
 

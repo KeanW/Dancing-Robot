@@ -1,5 +1,4 @@
 ﻿using UnityEngine;
-using HoloToolkit.Sharing;
 
 public class Rotate : MonoBehaviour
 {
@@ -16,6 +15,7 @@ public class Rotate : MonoBehaviour
     // Internal variable to track overall rotation (if constrained)
 
     public float rot = 0f;
+    private float diff = 0f;
 
     private AudioSource audioSource;
 
@@ -64,6 +64,17 @@ public class Rotate : MonoBehaviour
         BroadcastData(suppressBroadcast);
     }
 
+    public void SetData(float rot, float speed, bool fast, bool stopped)
+    {
+        diff = rot - this.rot;
+        this.speed = speed;
+        isFast = fast;
+        if (stopped)
+            StopPart(true);
+        else
+            StartPart(true);
+    }
+
     void BroadcastData(bool suppress)
     {
         if (!suppress)
@@ -72,34 +83,38 @@ public class Rotate : MonoBehaviour
 
     void Update()
     {
-        if (isStopped)
+        if (isStopped && diff < 0.00001f)
             return;
-        
+
         // Calculate the rotation amount as speed x time
         // (may get reduced to a smaller amount if near the angle limits)
+        // Include the diff that's set by other clients
 
-        var locRot = speed * Time.deltaTime * (isFast ? 2f : 1f);
+        var delta = (isStopped ? 0 : (speed * Time.deltaTime * (isFast ? 2f : 1f))) + diff;
+        diff = 0f;
 
         // If we're constraining movement (via min & max angles)...
+
+        var targetRot = rot + delta;
 
         if (minRot != maxRot)
         {
             // Then track the overall rotation
 
-            if (locRot + rot < minRot)
+            if (targetRot < minRot)
             {
                 // Don't go below the minimum angle
 
-                locRot = minRot - rot;
+                delta = minRot - rot;
             }
-            else if (locRot + rot > maxRot)
+            else if (targetRot > maxRot)
             {
                 // Don't go above the maximum angle
 
-                locRot = maxRot - rot;
+                delta = maxRot - rot;
             }
 
-            rot += locRot;
+            rot += delta;
 
             // And reverse the direction if we're at a limit
 
@@ -111,6 +126,6 @@ public class Rotate : MonoBehaviour
 
         // Perform the rotation itself
 
-        transform.Rotate(axis, locRot);
+        transform.Rotate(axis, delta);
     }
 }

@@ -21,16 +21,17 @@ public class RotateManager : MonoBehaviour
         }
 
         RobotMessages.Instance.MessageHandlers[RobotMessages.RobotMessageID.PartRotate] = this.OnPartRotate;
+
+        SharingSessionTracker.Instance.SessionJoined += this.OnSessionJoined;
     }
 
-    // When a new user joins we want to send them the relative transform for the anchor if we have it.
-
-    private void Instance_SessionJoined(object sender, SharingSessionTracker.SessionJoinedEventArgs e)
+    private void OnSessionJoined(object sender, SharingSessionTracker.SessionJoinedEventArgs e)
     {
-        BroadcastAll();
+        if (AnchorManager.Instance.Creator)
+            BroadcastAll();
     }
 
-    void BroadcastAll()
+    private void BroadcastAll()
     {
         foreach (var part in partList)
         {
@@ -38,25 +39,16 @@ public class RotateManager : MonoBehaviour
         }
     }
 
-    void OnPartRotate(NetworkInMessage msg)
+    private void OnPartRotate(NetworkInMessage msg)
     {
         // We read the user ID but we don't use it here
 
         msg.ReadInt64();
 
+        // Get the part number and then the part based on it
+
         var number = msg.ReadInt16();
         var part = partList[number];
-
-        part.rot = msg.ReadFloat();
-        part.speed = msg.ReadFloat();
-        part.isFast = msg.ReadInt16() > 0;
-
-        // We don't just set the flag as there's audio to control
-
-        var stopped = msg.ReadInt16();
-        if (stopped > 0)
-            part.StopPart(true);
-        else
-            part.StartPart(true);       
+        part.SetData(msg.ReadFloat(), msg.ReadFloat(), msg.ReadInt16() > 0, msg.ReadInt16() > 0);
     }
 }
