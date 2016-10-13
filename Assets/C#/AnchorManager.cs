@@ -13,7 +13,7 @@ using UnityEngine.VR.WSA.Sharing;
 /// <summary>
 /// Manages creating anchors and sharing the anchors with other clients.
 /// </summary>
-public class ImportExportAnchorManager : Singleton<ImportExportAnchorManager>
+public class AnchorManager : Singleton<AnchorManager>
 {
     /// <summary>
     /// Enum to track the progress through establishing a shared coordinate system.
@@ -49,6 +49,14 @@ public class ImportExportAnchorManager : Singleton<ImportExportAnchorManager>
         }
     }
 
+    public string LastAnchor
+    {
+        get
+        {
+            return lastName;
+        }
+    }
+
     public bool AnchorEstablished
     {
         get
@@ -56,6 +64,8 @@ public class ImportExportAnchorManager : Singleton<ImportExportAnchorManager>
             return currentState == ImportExportState.Ready;
         }
     }
+
+    private string lastName = null;
 
     /// <summary>
     /// WorldAnchorTransferBatch is the primary object in serializing/deserializing anchors.
@@ -264,7 +274,7 @@ public class ImportExportAnchorManager : Singleton<ImportExportAnchorManager>
 
     bool LocalUserHasLowestUserId()
     {
-        long localUserId = CustomMessages.Instance.localUserID;
+        long localUserId = RobotMessages.Instance.localUserID;
         foreach (long userid in SharingSessionTracker.Instance.UserIds)
         {
             if (userid < localUserId)
@@ -458,6 +468,8 @@ public class ImportExportAnchorManager : Singleton<ImportExportAnchorManager>
             WorldAnchor anchor = wat.LockObject(first, gameObject);
             anchorStore.Save(first, anchor);
             currentState = ImportExportState.Ready;
+
+            lastName = first;
         }
         else
         {
@@ -519,11 +531,42 @@ public class ImportExportAnchorManager : Singleton<ImportExportAnchorManager>
                 new XString(exportingAnchorName),
                 exportingAnchorBytes.ToArray(),
                 exportingAnchorBytes.Count);
+
+            lastName = exportingAnchorName;
         }
         else
         {
             Debug.Log("This anchor didn't work, trying again");
             currentState = ImportExportState.InitialAnchorRequired;
+        }
+    }
+
+    public void RemoveLastAnchor()
+    {
+        if (!String.IsNullOrEmpty(lastName))
+        {
+            Debug.Log("Looking for " + lastName);
+            string[] ids = anchorStore.GetAllIds();
+            for (int index = 0; index < ids.Length; index++)
+            {
+                if (ids[index] == lastName)
+                {
+                    Debug.Log("Deleting anchor " + lastName);
+                    WorldAnchor wa = anchorStore.Load(ids[index], gameObject);
+                    anchorStore.Delete(lastName);
+                    DestroyImmediate(wa);
+                }
+            }
+
+        }
+    }
+
+    public void ReplaceLastAnchor()
+    {
+        if (!String.IsNullOrEmpty(lastName))
+        {
+            WorldAnchor anchor = gameObject.AddComponent<WorldAnchor>();
+            anchorStore.Save(lastName, anchor);
         }
     }
 }

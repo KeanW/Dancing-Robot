@@ -1,4 +1,5 @@
 ﻿using UnityEngine;
+using HoloToolkit.Sharing;
 
 public class Rotate : MonoBehaviour
 {
@@ -10,11 +11,11 @@ public class Rotate : MonoBehaviour
     public float maxRot = 170f;         // Minimum angle of rotation (to contstrain movement)
     public float minRot = -170f;        // Maximim angle of rotation (if == min then unconstrained)
     public bool isFast = false;         // Flag to allow speed-up on selection
-    public bool isStopped = true;      // Flag to allow stopping
+    public bool isStopped = true;       // Flag to allow stopping
 
     // Internal variable to track overall rotation (if constrained)
 
-    private float rot = 0f;
+    public float rot = 0f;
 
     private AudioSource audioSource;
 
@@ -23,26 +24,29 @@ public class Rotate : MonoBehaviour
         audioSource = this.gameObject.GetComponent<AudioSource>();
     }
 
-    public void StartPart()
+    public void StartPart(bool suppressBroadcast = false)
     {
         isStopped = false;
         if (audioSource)
             audioSource.Play();
+        BroadcastData(suppressBroadcast);
     }
 
-    public void ReversePart()
+    public void ReversePart(bool suppressBroadcast = false)
     {
         speed = -speed;
+        BroadcastData(suppressBroadcast);
     }
 
-    public void StopPart()
+    public void StopPart(bool suppressBroadcast = false)
     {
         isStopped = true;
         if (audioSource)
             audioSource.Stop();
+        BroadcastData(suppressBroadcast);
     }
 
-    public void TogglePart()
+    public void TogglePart(bool suppressBroadcast = false)
     {
         isStopped = !isStopped;
         if (audioSource)
@@ -57,6 +61,13 @@ public class Rotate : MonoBehaviour
                 audioSource.Play();
             }
         }
+        BroadcastData(suppressBroadcast);
+    }
+
+    void BroadcastData(bool suppress)
+    {
+        if (!suppress)
+            RobotMessages.Instance.SendPartRotate(partNumber, rot, speed, isFast, isStopped);
     }
 
     void Update()
