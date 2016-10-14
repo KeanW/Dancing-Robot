@@ -27,7 +27,7 @@ public class RotateManager : MonoBehaviour
 
     private void OnSessionJoined(object sender, SharingSessionTracker.SessionJoinedEventArgs e)
     {
-        if (AnchorManager.Instance.Creator)
+        if (RobotMessages.Instance.localUserID != e.joiningUser.GetID())
             BroadcastAll();
     }
 

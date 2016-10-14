@@ -4,6 +4,8 @@ using HoloToolkit.Sharing;
 public class Scale : MonoBehaviour
 {
     private const float DefaultSizeFactor = 2.0f;
+    private Vector3 scaleToApply;
+    private bool scalePending = false;
 
     [Tooltip("Size multiplier to use when scaling the object up and down.")]
     public float SizeFactor = DefaultSizeFactor;
@@ -17,14 +19,24 @@ public class Scale : MonoBehaviour
 
         RobotMessages.Instance.MessageHandlers[RobotMessages.RobotMessageID.RobotScale] = this.OnRobotScale;
 
-        //SharingSessionTracker.Instance.SessionJoined += this.OnSessionJoined;
+        SharingSessionTracker.Instance.SessionJoined += this.OnSessionJoined;
+    }
+
+    private void Update()
+    {
+        if (scalePending)
+        {
+            transform.localScale = scaleToApply;
+            scalePending = false;
+        }
     }
 
     public void OnBigger()
     {
         Vector3 scale = transform.localScale;
         scale *= SizeFactor;
-        transform.localScale = scale;
+        scaleToApply = scale;
+        scalePending = true;
         RobotMessages.Instance.SendRobotScale(scale);
     }
 
@@ -32,13 +44,14 @@ public class Scale : MonoBehaviour
     {
         Vector3 scale = transform.localScale;
         scale /= SizeFactor;
-        transform.localScale = scale;
+        scaleToApply = scale;
+        scalePending = true;
         RobotMessages.Instance.SendRobotScale(scale);
     }
 
     private void OnSessionJoined(object sender, SharingSessionTracker.SessionJoinedEventArgs e)
     {
-        if (AnchorManager.Instance.Creator)
+        if (RobotMessages.Instance.localUserID != e.joiningUser.GetID())
             RobotMessages.Instance.SendRobotScale(transform.localScale);
     }
 
@@ -48,6 +61,7 @@ public class Scale : MonoBehaviour
 
         msg.ReadInt64();
 
-        transform.localScale = RobotMessages.Instance.ReadVector3(msg);
+        scaleToApply = RobotMessages.Instance.ReadVector3(msg);
+        scalePending = true;
     }
 }

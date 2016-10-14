@@ -249,7 +249,6 @@ public class AnchorManager : Singleton<AnchorManager>
         {
             if (LocalUserHasLowestUserId())
             {
-                creator = true;
                 Debug.Log("Creating room ");
                 // To keep anchors alive even if all users have left the session ...
                 // Pass in true instead of false in CreateRoom.
@@ -336,6 +335,12 @@ public class AnchorManager : Singleton<AnchorManager>
             case ImportExportState.AnchorStore_Initialized:
                 if (sharingServiceReady)
                 {
+                    var ids = SharingSessionTracker.Instance.UserIds;
+                    if (ids.Count == 1)
+                    {
+                        creator = true;
+                    }
+
                     InitRoomApi();
                 }
                 break;

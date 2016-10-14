@@ -167,7 +167,12 @@ public class RobotMessages : Singleton<RobotMessages>
     void OnMessageReceived(NetworkConnection connection, NetworkInMessage msg)
     {
         byte messageType = msg.ReadByte();
-        MessageHandlers[(RobotMessageID)messageType]?.Invoke(msg);
+        //MessageHandlers[(RobotMessageID)messageType]?.Invoke(msg);
+        MessageCallback messageHandler = MessageHandlers[(RobotMessageID)messageType];
+        if (messageHandler != null)
+        {
+            messageHandler(msg);
+        }
     }
 
     #region HelperFunctionsForWriting
