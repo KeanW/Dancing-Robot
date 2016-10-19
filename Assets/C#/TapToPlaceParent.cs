@@ -4,8 +4,57 @@ using HoloToolkit.Sharing;
 
 public class TapToPlaceParent : Singleton<TapToPlaceParent>
 {
-    AudioSource audioSource;
-    bool placing = false;
+    private AudioSource audioSource;
+    private bool placing = false;
+    private bool inControl = false;
+    private bool anchored = false;
+
+    void Start()
+    {
+        // We care about getting updates for the anchor transform
+
+        RobotMessages.Instance.MessageHandlers[RobotMessages.RobotMessageID.RobotTransform] = this.OnRobotTransfrom;
+
+        // And when a new user join we will send the anchor transform we have
+
+        SharingSessionTracker.Instance.SessionJoined += this.OnSessionJoined;
+
+        audioSource = this.gameObject.GetComponent<AudioSource>();
+
+        anchored = false;
+    }
+
+    // Update is called once per frame
+
+    void Update()
+    {
+        // If the user is in placing mode, update the placement to match the user's gaze
+
+        if (placing)
+        {
+            // Do a raycast into the world that will only hit the Spatial Mapping mesh
+
+            var headPosition = Camera.main.transform.position;
+            var gazeDirection = Camera.main.transform.forward;
+
+            RaycastHit hitInfo;
+            if (Physics.Raycast(headPosition, gazeDirection, out hitInfo,
+                30.0f, SpatialMapping.PhysicsRaycastMask))
+            {
+                // Move this object's parent object to
+                // where the raycast hit the Spatial Mapping mesh
+
+                this.transform.parent.position = hitInfo.point;
+
+                // Rotate this object's parent object to face the user
+
+                Quaternion toQuat = Camera.main.transform.localRotation;
+                toQuat.x = 0;
+                toQuat.z = 0;
+                this.transform.parent.rotation = toQuat;
+            }
+        }
+    }
 
     // Called by GazeGestureManager when the user performs a Select gesture
 
@@ -15,102 +64,38 @@ public class TapToPlaceParent : Singleton<TapToPlaceParent>
 
         placing = !placing;
 
-        // If the user is in placing mode, display the spatial mapping mes
-
         if (placing)
         {
-            AnchorManager.Instance.RemoveLastAnchor();
+            // If the user is in placing mode, display the spatial mapping mesh
+
+            AnchorManager.Instance.RemoveAnchor();
 
             SpatialMapping.Instance.DrawVisualMeshes = true;
-
-            GotTransform = false;
+            inControl = false;
         }
-        // If the user is not in placing mode, hide the spatial mapping mesh
         else
         {
-            AnchorManager.Instance.ReplaceLastAnchor();
+            // If the user is not in placing mode, hide the spatial mapping mesh
+
+            anchored = AnchorManager.Instance.PlaceAnchor(); // This should fire an update to other devices
 
             SpatialMapping.Instance.DrawVisualMeshes = false;
+            inControl = true;
 
-            // Note that we have a transform
-
-            GotTransform = true;
-
-            // And send it to our friends
-
-            RobotMessages.Instance.SendRobotTransform(transform.parent.localPosition, transform.parent.localRotation);
-        }
-    }
-
-    // Update is called once per frame
-
-    void Update()
-    {
-        if (GotTransform)
-        {
-            if (AnchorManager.Instance.AnchorEstablished && !animationPlayed)
+            //RobotMessages.Instance.SendUpdateAnchor();
+            if (anchored)
             {
-                //SendMessage("OnSelect");
-                animationPlayed = true;
-
-                //if (audioSource)
-                //    audioSource.Play();
+                Debug.Log(string.Format("Sent position: {0}, {1}, {2}", transform.parent.localPosition.x, transform.parent.localPosition.y, transform.parent.localPosition.z));
+                RobotMessages.Instance.SendRobotTransform(transform.parent.localPosition, transform.parent.localRotation);
             }
         }
-        else
-        {
-            // If the user is in placing mode, update the placement to match the user's gaze
-
-            if (placing)
-            {
-                // Do a raycast into the world that will only hit the Spatial Mapping mesh
-
-                var headPosition = Camera.main.transform.position;
-                var gazeDirection = Camera.main.transform.forward;
-
-                RaycastHit hitInfo;
-                if (Physics.Raycast(headPosition, gazeDirection, out hitInfo,
-                    30.0f, SpatialMapping.PhysicsRaycastMask))
-                {
-                    // Move this object's parent object to
-                    // where the raycast hit the Spatial Mapping mesh
-
-                    this.transform.parent.position = hitInfo.point;
-
-                    // Rotate this object's parent object to face the user
-
-                    Quaternion toQuat = Camera.main.transform.localRotation;
-                    toQuat.x = 0;
-                    toQuat.z = 0;
-                    this.transform.parent.rotation = toQuat;
-                }
-            }
-        }
-    }
-    
-    // Tracks if we have been sent a transform for the anchor model.
-    // The anchor model is rendered relative to the actual anchor.
-
-    public bool GotTransform { get; private set; }
-
-    private bool animationPlayed = false;
-
-    void Start()
-    {
-        // We care about getting updates for the anchor transform.
-        RobotMessages.Instance.MessageHandlers[RobotMessages.RobotMessageID.RobotTransform] = this.OnRobotTransfrom;
-
-        // And when a new user join we will send the anchor transform we have.
-        SharingSessionTracker.Instance.SessionJoined += this.OnSessionJoined;
-
-        audioSource = this.gameObject.GetComponent<AudioSource>();
     }
 
     // When a new user joins we want to send them the relative transform for the anchor if we have it.
 
     private void OnSessionJoined(object sender, SharingSessionTracker.SessionJoinedEventArgs e)
     {
-        if (GotTransform)
+        if (inControl && AnchorManager.Instance.IsAnchored())
         {
             RobotMessages.Instance.SendRobotTransform(transform.parent.localPosition, transform.parent.localRotation);
         }
@@ -124,16 +109,25 @@ public class TapToPlaceParent : Singleton<TapToPlaceParent>
 
         msg.ReadInt64();
 
-        transform.parent.localPosition = RobotMessages.Instance.ReadVector3(msg);
-        transform.parent.localRotation = RobotMessages.Instance.ReadQuaternion(msg);
-
-        if (!GotTransform)
+        if (AnchorManager.Instance.IsAnchored())
         {
-            //SendMessage("OnSelect");
-            if (audioSource)
-                audioSource.Play();
-        }
+            AnchorManager.Instance.RemoveAnchor();
 
-        GotTransform = true;
+            transform.parent.localPosition = RobotMessages.Instance.ReadVector3(msg);
+            transform.parent.localRotation = RobotMessages.Instance.ReadQuaternion(msg);
+
+            Debug.Log(string.Format("Loaded position: {0}, {1}, {2}", transform.parent.localPosition.x, transform.parent.localPosition.y, transform.parent.localPosition.z));
+            //if (audioSource != null)
+            //    audioSource.Play();
+
+            AnchorManager.Instance.ReplaceAnchor();
+
+            inControl = false;
+        }
+        else
+        {
+            RobotMessages.Instance.ReadVector3(msg);
+            RobotMessages.Instance.ReadQuaternion(msg);
+        }
     }
 }

@@ -23,10 +23,17 @@ public class Dance : MonoBehaviour {
 
     void Update()
     {
-        if (dancing && update)
+        if (update)
         {
-            this.BroadcastMessage("OnReverse");
-            update = false;
+            if (dancing)
+            {
+                this.BroadcastMessage("OnReverse");
+                update = false;
+            }
+            else
+            {
+                OnStartDancing();
+            }
         }
     }
 

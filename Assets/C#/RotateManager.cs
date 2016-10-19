@@ -1,10 +1,16 @@
-﻿using UnityEngine;
+﻿using HoloToolkit.Unity;
 using HoloToolkit.Sharing;
 
-public class RotateManager : MonoBehaviour
+public class RotateManager : Singleton<RotateManager>
 {
     public int parts = 6;
     private Rotate[] partList;
+    private bool inControl = false;
+
+    public void TakeControl()
+    {
+        inControl = true;
+    }
 
     void Start()
     {
@@ -20,6 +26,8 @@ public class RotateManager : MonoBehaviour
             partList[partObj.partNumber] = partObj;
         }
 
+        inControl = false;
+
         RobotMessages.Instance.MessageHandlers[RobotMessages.RobotMessageID.PartRotate] = this.OnPartRotate;
 
         SharingSessionTracker.Instance.SessionJoined += this.OnSessionJoined;
@@ -27,7 +35,7 @@ public class RotateManager : MonoBehaviour
 
     private void OnSessionJoined(object sender, SharingSessionTracker.SessionJoinedEventArgs e)
     {
-        if (RobotMessages.Instance.localUserID != e.joiningUser.GetID())
+        if (inControl)
             BroadcastAll();
     }
 
@@ -50,5 +58,7 @@ public class RotateManager : MonoBehaviour
         var number = msg.ReadInt16();
         var part = partList[number];
         part.SetData(msg.ReadFloat(), msg.ReadFloat(), msg.ReadInt16() > 0, msg.ReadInt16() > 0);
+
+        inControl = false;
     }
 }

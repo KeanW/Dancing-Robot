@@ -1,13 +1,9 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License. See LICENSE in the project root for license information.
-
-using HoloToolkit.Sharing;
+﻿using HoloToolkit.Sharing;
 using HoloToolkit.Unity;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.VR.WSA;
-using UnityEngine.VR.WSA.Persistence;
 using UnityEngine.VR.WSA.Sharing;
 
 /// <summary>
@@ -25,18 +21,19 @@ public class AnchorManager : Singleton<AnchorManager>
         Ready,
         Failed,
         // AnchorStore values
-        AnchorStore_Initializing,
-        AnchorStore_Initialized,
+        ReadyToInitialize,
         RoomApiInitialized,
         // Anchor creation values
         InitialAnchorRequired,
+        WaitingForAnchorLocation,
         CreatingInitialAnchor,
         ReadyToExportInitialAnchor,
         UploadingInitialAnchor,
         // Anchor values
         DataRequested,
         DataReady,
-        Importing
+        Importing,
+        Zeroing
     }
 
     ImportExportState currentState = ImportExportState.Start;
@@ -49,12 +46,6 @@ public class AnchorManager : Singleton<AnchorManager>
         }
     }
 
-    private bool creator = false;
-    public bool Creator
-    {
-        get { return creator; }
-    }
-
     public bool AnchorEstablished
     {
         get
@@ -63,7 +54,10 @@ public class AnchorManager : Singleton<AnchorManager>
         }
     }
 
-    private string lastName = null;
+    private AudioSource audioSource = null;
+
+    //private bool anchoring = false;
+    private bool placed = false;
 
     /// <summary>
     /// WorldAnchorTransferBatch is the primary object in serializing/deserializing anchors.
@@ -74,11 +68,6 @@ public class AnchorManager : Singleton<AnchorManager>
     /// Keeps track of stored anchor data blob.
     /// </summary>
     byte[] rawAnchorData = null;
-
-    /// <summary>
-    /// Keeps track of locally stored anchors.
-    /// </summary>
-    WorldAnchorStore anchorStore = null;
 
     /// <summary>
     /// Keeps track of the name of the anchor we are exporting.
@@ -124,25 +113,26 @@ public class AnchorManager : Singleton<AnchorManager>
     /// </summary>
     RoomManagerAdapter roomManagerCallbacks;
 
-    void Start()
+    private void Start()
     {
         Debug.Log("Import Export Manager starting");
 
-        currentState = ImportExportState.Ready;
-
-        // We need to get our local anchor store started up.
-        currentState = ImportExportState.AnchorStore_Initializing;
-        WorldAnchorStore.GetAsync(AnchorStoreReady);
+        currentState = ImportExportState.ReadyToInitialize;
 
         //Wait for a notification that the sharing manager has been initialized (connected to sever)
         SharingStage.Instance.SharingManagerConnected += SharingManagerConnected;
+
+        audioSource = this.gameObject.GetComponent<AudioSource>();
+
+        //anchoring = SharingSessionTracker.Instance.UserIds.Count == 1;
+        placed = false;
     }
 
-    void OnDestroy()
+    private void OnDestroy()
     {
         if (roomManagerCallbacks != null)
         {
-            roomManagerCallbacks.AnchorsDownloadedEvent -= RoomManagerCallbacks_AnchorsDownloaded;
+            roomManagerCallbacks.AnchorsDownloadedEvent -= OnAnchorsDownloaded;
             roomManagerCallbacks.AnchorUploadedEvent -= RoomManagerCallbacks_AnchorUploaded;
 
             if (roomManager != null)
@@ -158,13 +148,13 @@ public class AnchorManager : Singleton<AnchorManager>
         roomManager = SharingStage.Instance.Manager.GetRoomManager();
         roomManagerCallbacks = new RoomManagerAdapter();
 
-        roomManagerCallbacks.AnchorsDownloadedEvent += RoomManagerCallbacks_AnchorsDownloaded;
+        roomManagerCallbacks.AnchorsDownloadedEvent += OnAnchorsDownloaded;
         roomManagerCallbacks.AnchorUploadedEvent += RoomManagerCallbacks_AnchorUploaded;
         roomManager.AddListener(roomManagerCallbacks);
 
         // We will register for session joined to indicate when the sharing service
         // is ready for us to make room related requests.
-        SharingSessionTracker.Instance.SessionJoined += Instance_SessionJoined;
+        SharingSessionTracker.Instance.SessionJoined += OnSessionJoined;
     }
 
     /// <summary>
@@ -186,7 +176,7 @@ public class AnchorManager : Singleton<AnchorManager>
     /// <summary>
     /// Called when anchor download operations complete.
     /// </summary>
-    private void RoomManagerCallbacks_AnchorsDownloaded(bool successful, AnchorDownloadRequest request, XString failureReason)
+    private void OnAnchorsDownloaded(bool successful, AnchorDownloadRequest request, XString failureReason)
     {
         // If we downloaded anchor data successfully we should import the data.
         if (successful)
@@ -207,32 +197,22 @@ public class AnchorManager : Singleton<AnchorManager>
     }
 
     /// <summary>
-    /// Called when the local anchor store is ready.
-    /// </summary>
-    /// <param name="store"></param>
-    void AnchorStoreReady(WorldAnchorStore store)
-    {
-        anchorStore = store;
-        currentState = ImportExportState.AnchorStore_Initialized;
-    }
-
-    /// <summary>
     /// Called when a user (including the local user) joins a session.
     /// In this case we are using this event to signal that the sharing service is
     /// ready for us to make room related requests.
     /// </summary>
     /// <param name="sender"></param>
     /// <param name="e"></param>
-    private void Instance_SessionJoined(object sender, SharingSessionTracker.SessionJoinedEventArgs e)
+    private void OnSessionJoined(object sender, SharingSessionTracker.SessionJoinedEventArgs e)
     {
         // We don't need to get this event anymore.
-        SharingSessionTracker.Instance.SessionJoined -= Instance_SessionJoined;
+        SharingSessionTracker.Instance.SessionJoined -= OnSessionJoined;
 
         // We still wait to wait a few seconds for everything to settle.
         Invoke("MarkSharingServiceReady", 5);
     }
 
-    void MarkSharingServiceReady()
+    private void MarkSharingServiceReady()
     {
         sharingServiceReady = true;
     }
@@ -240,14 +220,13 @@ public class AnchorManager : Singleton<AnchorManager>
     /// <summary>
     /// Initializes the room api.
     /// </summary>
-    void InitRoomApi()
+    private void InitRoomApi()
     {
-        // If we have a room, we'll join the first room we see.
-        // If we are the user with the lowest user ID, we will create the room.
-        // Otherwise we will wait for the room to be created.
         if (roomManager.GetRoomCount() == 0)
         {
-            if (LocalUserHasLowestUserId())
+            // There used to be a check here: we'll disable it
+
+            //if (anchoring)
             {
                 Debug.Log("Creating room ");
                 // To keep anchors alive even if all users have left the session ...
@@ -261,12 +240,15 @@ public class AnchorManager : Singleton<AnchorManager>
             Debug.Log("Joining room ");
             currentRoom = roomManager.GetRoom(0);
             roomManager.JoinRoom(currentRoom);
-            currentState = ImportExportState.RoomApiInitialized;
+            currentState =
+                (currentRoom.GetAnchorCount() > 0 ?
+                    ImportExportState.RoomApiInitialized :
+                    ImportExportState.InitialAnchorRequired);
         }
 
         if (currentRoom != null)
         {
-            Debug.Log("In room :" + roomManager.GetCurrentRoom().GetName().GetString());
+            Debug.Log("In room: " + roomManager.GetCurrentRoom().GetName().GetString());
         }
     }
 
@@ -287,7 +269,7 @@ public class AnchorManager : Singleton<AnchorManager>
     /// <summary>
     /// Kicks off the process of creating the shared space.
     /// </summary>
-    void StartAnchorProcess()
+    private void StartAnchorProcess()
     {
         // First, are there any anchors in this room?
         int anchorCount = currentRoom.GetAnchorCount();
@@ -302,7 +284,7 @@ public class AnchorManager : Singleton<AnchorManager>
             string storedAnchorName = storedAnchorString.GetString();
 
             // Attempt to attach to the anchor in our local anchor store.
-            if (AttachToCachedAnchor(storedAnchorName) == false)
+            //if (AttachToCachedAnchor(storedAnchorName) == false)
             {
                 Debug.Log("Starting room download");
                 // If we cannot find the anchor by name, we will need the full data blob.
@@ -314,7 +296,7 @@ public class AnchorManager : Singleton<AnchorManager>
     /// <summary>
     /// Kicks off getting the datablob required to import the shared anchor.
     /// </summary>
-    void MakeAnchorDataRequest()
+    private void MakeAnchorDataRequest()
     {
         if (roomManager.DownloadAnchor(currentRoom, currentRoom.GetAnchorName(0)))
         {
@@ -327,20 +309,14 @@ public class AnchorManager : Singleton<AnchorManager>
         }
     }
 
-    void Update()
+    private void Update()
     {
         switch (currentState)
         {
             // If the local anchor store is initialized.
-            case ImportExportState.AnchorStore_Initialized:
+            case ImportExportState.ReadyToInitialize:
                 if (sharingServiceReady)
                 {
-                    var ids = SharingSessionTracker.Instance.UserIds;
-                    if (ids.Count == 1)
-                    {
-                        creator = true;
-                    }
-
                     InitRoomApi();
                 }
                 break;
@@ -350,11 +326,16 @@ public class AnchorManager : Singleton<AnchorManager>
             case ImportExportState.DataReady:
                 // DataReady is set when the anchor download completes.
                 currentState = ImportExportState.Importing;
-                WorldAnchorTransferBatch.ImportAsync(rawAnchorData, ImportComplete);
+                WorldAnchorTransferBatch.ImportAsync(rawAnchorData, OnImportComplete);
                 break;
             case ImportExportState.InitialAnchorRequired:
-                currentState = ImportExportState.CreatingInitialAnchor;
+                if (placed)
+                    currentState = ImportExportState.CreatingInitialAnchor;
+                break;
+            case ImportExportState.CreatingInitialAnchor: // Added by Kean
                 CreateAnchorLocally();
+                break;
+            case ImportExportState.WaitingForAnchorLocation: // Added by Kean
                 break;
             case ImportExportState.ReadyToExportInitialAnchor:
                 // We've created an anchor locally and it is ready to export.
@@ -367,7 +348,7 @@ public class AnchorManager : Singleton<AnchorManager>
     /// <summary>
     /// Starts establishing a new anchor.
     /// </summary>
-    void CreateAnchorLocally()
+    private void CreateAnchorLocally()
     {
         WorldAnchor anchor = GetComponent<WorldAnchor>();
         if (anchor == null)
@@ -381,14 +362,15 @@ public class AnchorManager : Singleton<AnchorManager>
         }
         else
         {
-            anchor.OnTrackingChanged += Anchor_OnTrackingChanged_InitialAnchor;
+            currentState = ImportExportState.WaitingForAnchorLocation;
+            anchor.OnTrackingChanged += OnTrackingChanged;
         }
     }
 
     /// <summary>
     /// Callback to trigger when an anchor has been 'found'.
     /// </summary>
-    private void Anchor_OnTrackingChanged_InitialAnchor(WorldAnchor self, bool located)
+    private void OnTrackingChanged(WorldAnchor self, bool located)
     {
         if (located)
         {
@@ -401,58 +383,7 @@ public class AnchorManager : Singleton<AnchorManager>
             currentState = ImportExportState.Failed;
         }
 
-        self.OnTrackingChanged -= Anchor_OnTrackingChanged_InitialAnchor;
-    }
-
-    /// <summary>
-    /// Attempts to attach to  an anchor by anchorName in the local store..
-    /// </summary>
-    /// <returns>True if it attached, false if it could not attach</returns>
-    bool AttachToCachedAnchor(string AnchorName)
-    {
-        Debug.Log("Looking for " + AnchorName);
-        string[] ids = anchorStore.GetAllIds();
-        for (int index = 0; index < ids.Length; index++)
-        {
-            if (ids[index] == AnchorName)
-            {
-                Debug.Log("Using what we have");
-                WorldAnchor wa = anchorStore.Load(ids[index], gameObject);
-                if (wa.isLocated)
-                {
-                    currentState = ImportExportState.Ready;
-                }
-                else
-                {
-                    wa.OnTrackingChanged += ImportExportAnchorManager_OnTrackingChanged_Attaching;
-                }
-                return true;
-            }
-        }
-
-        // Didn't find the anchor.
-        return false;
-    }
-
-    /// <summary>
-    /// Called when tracking changes for a 'cached' anchor.
-    /// </summary>
-    /// <param name="self"></param>
-    /// <param name="located"></param>
-    private void ImportExportAnchorManager_OnTrackingChanged_Attaching(WorldAnchor self, bool located)
-    {
-        Debug.Log("anchor " + located);
-        if (located)
-        {
-            currentState = ImportExportState.Ready;
-        }
-        else
-        {
-            Debug.Log("Failed to find local anchor from cache.");
-            MakeAnchorDataRequest();
-        }
-
-        self.OnTrackingChanged -= ImportExportAnchorManager_OnTrackingChanged_Attaching;
+        self.OnTrackingChanged -= OnTrackingChanged;
     }
 
     /// <summary>
@@ -460,7 +391,7 @@ public class AnchorManager : Singleton<AnchorManager>
     /// </summary>
     /// <param name="status"></param>
     /// <param name="wat"></param>
-    void ImportComplete(SerializationCompletionReason status, WorldAnchorTransferBatch wat)
+    private void OnImportComplete(SerializationCompletionReason status, WorldAnchorTransferBatch wat)
     {
         if (status == SerializationCompletionReason.Succeeded && wat.GetAllIds().Length > 0)
         {
@@ -469,11 +400,16 @@ public class AnchorManager : Singleton<AnchorManager>
             string first = wat.GetAllIds()[0];
             Debug.Log("Anchor name: " + first);
 
+            // Try zeroing out the local position & rotation
+
+            gameObject.transform.localPosition = new Vector3();
+            gameObject.transform.localRotation = new Quaternion();
+
             WorldAnchor anchor = wat.LockObject(first, gameObject);
-            anchorStore.Save(first, anchor);
             currentState = ImportExportState.Ready;
 
-            lastName = first;
+            if (audioSource != null)
+                audioSource.Play();
         }
         else
         {
@@ -485,7 +421,7 @@ public class AnchorManager : Singleton<AnchorManager>
     /// <summary>
     /// Exports the currently created anchor.
     /// </summary>
-    void Export()
+    private void Export()
     {
         WorldAnchor anchor = GetComponent<WorldAnchor>();
 
@@ -495,21 +431,11 @@ public class AnchorManager : Singleton<AnchorManager>
             return;
         }
 
-        string guidString = Guid.NewGuid().ToString();
-        exportingAnchorName = guidString;
+        exportingAnchorName = "robot-placement";
 
-        // Save the anchor to our local anchor store.
-        if (anchorStore.Save(exportingAnchorName, anchor))
-        {
-            sharedAnchorInterface = new WorldAnchorTransferBatch();
-            sharedAnchorInterface.AddWorldAnchor(guidString, anchor);
-            WorldAnchorTransferBatch.ExportAsync(sharedAnchorInterface, WriteBuffer, ExportComplete);
-        }
-        else
-        {
-            Debug.Log("This anchor didn't work, trying again");
-            currentState = ImportExportState.InitialAnchorRequired;
-        }
+        sharedAnchorInterface = new WorldAnchorTransferBatch();
+        sharedAnchorInterface.AddWorldAnchor(exportingAnchorName, anchor);
+        WorldAnchorTransferBatch.ExportAsync(sharedAnchorInterface, WriteBuffer, OnExportComplete);
     }
 
     /// <summary>
@@ -525,7 +451,7 @@ public class AnchorManager : Singleton<AnchorManager>
     /// Called by the WorldAnchorTransferBatch when anchor exporting is complete.
     /// </summary>
     /// <param name="status"></param>
-    public void ExportComplete(SerializationCompletionReason status)
+    private void OnExportComplete(SerializationCompletionReason status)
     {
         if (status == SerializationCompletionReason.Succeeded && exportingAnchorBytes.Count > minTrustworthySerializedAnchorDataSize)
         {
@@ -535,8 +461,6 @@ public class AnchorManager : Singleton<AnchorManager>
                 new XString(exportingAnchorName),
                 exportingAnchorBytes.ToArray(),
                 exportingAnchorBytes.Count);
-
-            lastName = exportingAnchorName;
         }
         else
         {
@@ -545,32 +469,52 @@ public class AnchorManager : Singleton<AnchorManager>
         }
     }
 
-    public void RemoveLastAnchor()
+    public bool PlaceAnchor()
     {
-        if (!String.IsNullOrEmpty(lastName))
+        if (currentState == ImportExportState.InitialAnchorRequired)
         {
-            Debug.Log("Looking for " + lastName);
-            string[] ids = anchorStore.GetAllIds();
-            for (int index = 0; index < ids.Length; index++)
-            {
-                if (ids[index] == lastName)
-                {
-                    Debug.Log("Deleting anchor " + lastName);
-                    WorldAnchor wa = anchorStore.Load(ids[index], gameObject);
-                    anchorStore.Delete(lastName);
-                    DestroyImmediate(wa);
-                }
-            }
+            currentState = ImportExportState.CreatingInitialAnchor;
+            //anchoring = true;
+            return true;
+        }
+        else
+        {
+            placed = true;
+        }
+        return false;
+    }
 
+    /*
+    public void UpdateAnchor()
+    {
+        if (currentState == ImportExportState.Ready)
+        {
+            currentState = ImportExportState.RoomApiInitialized;
+        }
+    }
+    */
+
+    public void RemoveAnchor()
+    {
+        var anchor = gameObject.GetComponent<WorldAnchor>();
+        if (anchor != null)
+        {
+            DestroyImmediate(anchor);
         }
     }
 
-    public void ReplaceLastAnchor()
+    public void ReplaceAnchor()
     {
-        if (!String.IsNullOrEmpty(lastName))
+        var anchor = gameObject.GetComponent<WorldAnchor>();
+        if (anchor == null)
         {
-            WorldAnchor anchor = gameObject.AddComponent<WorldAnchor>();
-            anchorStore.Save(lastName, anchor);
+            gameObject.AddComponent<WorldAnchor>();
         }
+    }
+
+    public bool IsAnchored()
+    {
+        var anchor = gameObject.GetComponent<WorldAnchor>();
+        return anchor != null && anchor.isLocated;
     }
 }

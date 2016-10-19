@@ -6,6 +6,7 @@ public class Scale : MonoBehaviour
     private const float DefaultSizeFactor = 2.0f;
     private Vector3 scaleToApply;
     private bool scalePending = false;
+    private bool inControl = false;
 
     [Tooltip("Size multiplier to use when scaling the object up and down.")]
     public float SizeFactor = DefaultSizeFactor;
@@ -16,6 +17,8 @@ public class Scale : MonoBehaviour
         {
             SizeFactor = DefaultSizeFactor;
         }
+
+        inControl = false;
 
         RobotMessages.Instance.MessageHandlers[RobotMessages.RobotMessageID.RobotScale] = this.OnRobotScale;
 
@@ -37,6 +40,8 @@ public class Scale : MonoBehaviour
         scale *= SizeFactor;
         scaleToApply = scale;
         scalePending = true;
+        inControl = true;
+
         RobotMessages.Instance.SendRobotScale(scale);
     }
 
@@ -46,12 +51,14 @@ public class Scale : MonoBehaviour
         scale /= SizeFactor;
         scaleToApply = scale;
         scalePending = true;
+        inControl = true;
+
         RobotMessages.Instance.SendRobotScale(scale);
     }
 
     private void OnSessionJoined(object sender, SharingSessionTracker.SessionJoinedEventArgs e)
     {
-        if (RobotMessages.Instance.localUserID != e.joiningUser.GetID())
+        if (inControl)
             RobotMessages.Instance.SendRobotScale(transform.localScale);
     }
 
@@ -63,5 +70,6 @@ public class Scale : MonoBehaviour
 
         scaleToApply = RobotMessages.Instance.ReadVector3(msg);
         scalePending = true;
+        inControl = false;
     }
 }

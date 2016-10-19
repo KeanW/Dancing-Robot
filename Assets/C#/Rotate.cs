@@ -27,7 +27,7 @@ public class Rotate : MonoBehaviour
     public void StartPart(bool suppressBroadcast = false)
     {
         isStopped = false;
-        if (audioSource)
+        if (audioSource != null)
             audioSource.Play();
         BroadcastData(suppressBroadcast);
     }
@@ -78,12 +78,15 @@ public class Rotate : MonoBehaviour
     void BroadcastData(bool suppress)
     {
         if (!suppress)
+        {
+            RotateManager.Instance.TakeControl();
             RobotMessages.Instance.SendPartRotate(partNumber, rot, speed, isFast, isStopped);
+        }
     }
 
     void Update()
     {
-        if (isStopped && diff < 0.00001f)
+        if (isStopped && System.Math.Abs(diff) < 0.00001f)
             return;
 
         // Calculate the rotation amount as speed x time
