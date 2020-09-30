@@ -1,4 +1,4 @@
-# Dancing-Robot
+# Dancing-Bot
 _A HoloLens application allowing collaborative viewing and manipulation of the 3D model of an ABB welding robot._
 
 ## Origins
